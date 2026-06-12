@@ -71,7 +71,7 @@ def get_settings() -> Settings:
         retry_max   = int(os.getenv("RETRY_MAX",  "3")),
         headless    = os.getenv("HEADLESS", "true").lower() == "true",
         db_host     = os.getenv("DB_HOST",     ""),
-        db_port     = os.getenv("DB_PORT",     "5432"),
+        db_port     = "5432",
         db_name     = os.getenv("DB_NAME",     ""),
         db_user     = os.getenv("DB_USER",     ""),
         db_password = os.getenv("DB_PASSWORD", ""),
