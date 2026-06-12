@@ -60,5 +60,26 @@ jobs:
       - name: Install Playwright browsers
         run: playwright install chromium --with-deps
 
+      - name: Debug DB connection (HAPUS SETELAH FIX)
+        run: |
+          python3 -c "
+          import os, psycopg
+          host = os.getenv('DB_HOST', 'TIDAK ADA')
+          user = os.getenv('DB_USER', 'TIDAK ADA')
+          port = os.getenv('DB_PORT', 'TIDAK ADA')
+          print(f'DB_HOST : {host}')
+          print(f'DB_USER : {user}')
+          print(f'DB_PORT : {port}')
+          print(f'DB_NAME : {os.getenv(\"DB_NAME\", \"TIDAK ADA\")}')
+          dsn = f'host={host} port={port} dbname={os.getenv(\"DB_NAME\")} user={user} password={os.getenv(\"DB_PASSWORD\")} sslmode=require'
+          print(f'Mencoba koneksi...')
+          try:
+              with psycopg.connect(dsn, connect_timeout=15) as conn:
+                  v = conn.execute('SELECT current_user, version()').fetchone()
+                  print(f'BERHASIL — user: {v[0]}')
+          except Exception as e:
+              print(f'GAGAL: {e}')
+          "
+
       - name: Run ETL pipeline
         run: python -m src.main
