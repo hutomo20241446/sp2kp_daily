@@ -1,6 +1,6 @@
 # src/config/settings.py
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime, timezone, timedelta
 
 
@@ -34,10 +34,24 @@ class Settings:
 
     @property
     def dsn(self) -> str:
+        """
+        Gunakan format key-value (libpq keyword) bukan URI.
+
+        Alasan: DB_USER dari Supabase Pooler mengandung titik
+        (contoh: postgres.jgzkecfbrsfpfqzdtrky). Format URI
+        (postgresql://user:pass@host/db) dapat salah mem-parse
+        username yang mengandung karakter non-alfanumerik,
+        menyebabkan koneksi gagal.
+
+        Format key-value aman untuk semua karakter di username/password.
+        """
         return (
-            f"postgresql://{self.db_user}:{self.db_password}"
-            f"@{self.db_host}:{self.db_port}/{self.db_name}"
-            f"?sslmode=require"
+            f"host={self.db_host} "
+            f"port={self.db_port} "
+            f"dbname={self.db_name} "
+            f"user={self.db_user} "
+            f"password={self.db_password} "
+            f"sslmode=require"
         )
 
 
