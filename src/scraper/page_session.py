@@ -49,14 +49,14 @@ class PageSession:
     async def _select_provinsi(self):
         prov_input = self.page.locator("#input-20")
         await prov_input.click()
-        await self.page.wait_for_timeout(400)
-        await prov_input.fill(self.provinsi)
         await self.page.wait_for_timeout(800)
+        await prov_input.fill(self.provinsi)
+        await self.page.wait_for_timeout(1500)
         opt = (
             self.page.locator(".v-list-item")
             .filter(has_text=self.provinsi)
             .first
         )
-        await opt.wait_for(state="visible", timeout=5_000)
+        await opt.wait_for(state="visible", timeout=15_000)
         await opt.click()
         await self.page.wait_for_timeout(1_500)
