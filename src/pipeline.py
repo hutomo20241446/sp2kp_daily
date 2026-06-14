@@ -27,30 +27,44 @@ from src.load.supabase_loader import upsert_to_supabase
 
 # ── Guard: cek apakah tanggal sudah lengkap di DB ──────────────────────────────
 
-def _is_date_complete_in_db(dsn: str, target: date, kabupaten_count: int) -> bool:
-    """
-    Kembalikan True jika fact_harga_harian sudah punya data untuk target_date
-    dengan jumlah record >= kabupaten_count * EXPECTED_KOMODITAS.
-    Dipakai untuk skip run yang sudah sukses sebelumnya (idempotent).
-    """
-    import psycopg
+def _is_date_complete_in_db(
+    dsn: str,
+    target: date,
+    kabupaten_count: int
+) -> bool:
+
     expected = kabupaten_count * EXPECTED_KOMODITAS
+
     try:
         with psycopg.connect(dsn) as conn:
             with conn.cursor() as cur:
+
                 cur.execute(
-                    "SELECT COUNT(*) FROM fact_harga_harian WHERE tanggal = %s",
+                    """
+                    SELECT COUNT(*)
+                    FROM fact_harga_harian
+                    WHERE tanggal = %s
+                      AND harga IS NOT NULL
+                    """,
                     (target,),
                 )
-                count = cur.fetchone()[0]
-        complete = count >= expected
+
+                filled = cur.fetchone()[0]
+
+        complete = filled >= expected
+
         logger.info(
-            f"DB check tanggal {target}: {count} records "
-            f"(ekspektasi ≥{expected}) → {'LENGKAP, skip' if complete else 'perlu scrape'}"
+            f"DB check {target}: "
+            f"{filled}/{expected} harga terisi "
+            f"→ {'LENGKAP' if complete else 'BELUM LENGKAP'}"
         )
+
         return complete
+
     except Exception as e:
-        logger.warning(f"DB check gagal ({e}), lanjut scraping.")
+        logger.warning(
+            f"DB check gagal ({e}), lanjut scraping."
+        )
         return False
 
 
