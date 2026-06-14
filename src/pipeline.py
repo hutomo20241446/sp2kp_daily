@@ -14,6 +14,7 @@ import asyncio
 import time
 from asyncio import Queue
 from datetime import date
+import psycopg
 
 from src.config.settings import Settings
 from src.config.logger import logger
