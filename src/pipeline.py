@@ -3,11 +3,13 @@
 Orchestrator ETL pipeline SP2KP (daily, GitHub Actions).
 
 Alur:
-1. Cek apakah tanggal target sudah ada di DB → skip jika sudah lengkap.
+1. Cek apakah tanggal target sudah lengkap di DB (>= 595 harga non-null).
+   Jika belum, identifikasi kabupaten yang BELUM memiliki data → hanya scrape itu.
 2. Ambil daftar kabupaten dari situs (fallback ke hardcoded).
 3. Jalankan N worker paralel; tiap worker scrape satu (kab, date) per iterasi.
 4. Transform in-memory (clean + dedup).
-5. Upsert ke Supabase, urut tanggal ASC.
+5. Upsert ke Supabase (hanya non-null), urut tanggal ASC.
+6. Log ringkasan: berapa diupsert, apakah sudah >= 595.
 """
 
 import asyncio
@@ -23,23 +25,32 @@ from src.scraper.page_session import PageSession
 from src.scraper.sp2kp_scraper import SP2KPScraper, EXPECTED_KOMODITAS
 from src.scraper.entities import HargaHarian
 from src.transform.transformer import transform
-from src.load.supabase_loader import upsert_to_supabase
+from src.load.supabase_loader import upsert_to_supabase, COMPLETE_THRESHOLD
 
 
-# ── Guard: cek apakah tanggal sudah lengkap di DB ──────────────────────────────
+# ── Guard: cek kelengkapan dan kabupaten yang belum masuk ─────────────────────
 
-def _is_date_complete_in_db(
+def _check_completion_status(
     dsn: str,
     target: date,
-    kabupaten_count: int
-) -> bool:
+    kabupaten_list: list[str],
+    provinsi: str,
+) -> tuple[bool, list[str]]:
+    """
+    Cek apakah data tanggal target sudah lengkap di DB.
 
-    expected = kabupaten_count * EXPECTED_KOMODITAS
+    Return:
+        (is_complete, missing_kabupaten)
 
+        - is_complete        : True jika harga non-null >= COMPLETE_THRESHOLD
+        - missing_kabupaten  : daftar kabupaten yang belum punya data non-null
+                               untuk tanggal target. Kosong jika is_complete=True.
+    """
     try:
         with psycopg.connect(dsn) as conn:
             with conn.cursor() as cur:
 
+                # Total harga non-null hari ini
                 cur.execute(
                     """
                     SELECT COUNT(*)
@@ -49,24 +60,49 @@ def _is_date_complete_in_db(
                     """,
                     (target,),
                 )
-
                 filled = cur.fetchone()[0]
 
-        complete = filled >= expected
+                is_complete = filled >= COMPLETE_THRESHOLD
+
+                logger.info(
+                    f"DB check {target}: "
+                    f"{filled}/{COMPLETE_THRESHOLD} harga terisi "
+                    f"→ {'✅ LENGKAP' if is_complete else '⏳ BELUM LENGKAP'}"
+                )
+
+                if is_complete:
+                    return True, []
+
+                # Cari kabupaten yang SUDAH punya minimal 1 harga non-null
+                cur.execute(
+                    """
+                    SELECT DISTINCT dw.kabupaten_kota
+                    FROM fact_harga_harian fhh
+                    JOIN dim_wilayah dw USING (wilayah_key)
+                    WHERE fhh.tanggal = %s
+                      AND fhh.harga IS NOT NULL
+                      AND dw.provinsi = %s
+                    """,
+                    (target, provinsi),
+                )
+                done_set = {row[0] for row in cur.fetchall()}
+
+        missing = [kab for kab in kabupaten_list if kab not in done_set]
 
         logger.info(
-            f"DB check {target}: "
-            f"{filled}/{expected} harga terisi "
-            f"→ {'LENGKAP' if complete else 'BELUM LENGKAP'}"
+            f"Kabupaten sudah ada data : {len(done_set)}, "
+            f"belum ada data : {len(missing)}"
         )
+        if missing:
+            logger.info(f"Kabupaten yang akan di-scrape ulang: {missing}")
 
-        return complete
+        return False, missing
 
     except Exception as e:
         logger.warning(
-            f"DB check gagal ({e}), lanjut scraping."
+            f"DB check gagal ({e}), lanjut scraping semua kabupaten."
         )
-        return False
+        return False, kabupaten_list
 
 
 # ── Worker ──────────────────────────────────────────────────────────────────────
@@ -164,22 +200,42 @@ async def run_pipeline(settings: Settings):
     async with BrowserFactory(headless=settings.headless) as factory:
         browser = factory.browser
 
-        # 1. Ambil daftar kabupaten
+        # 1. Ambil daftar kabupaten lengkap dari situs
         kabupaten_list = await scraper.fetch_kabupaten(browser)
-        total = len(kabupaten_list)
+        total_kab = len(kabupaten_list)
 
-        # 2. Guard: skip jika tanggal sudah lengkap di DB
-        if _is_date_complete_in_db(settings.dsn, settings.target_date, total):
-            logger.info("Data sudah lengkap di DB, pipeline selesai tanpa scraping.")
+        # 2. Guard: cek kelengkapan + tentukan mana yang belum masuk DB
+        is_complete, to_scrape = _check_completion_status(
+            dsn            = settings.dsn,
+            target         = settings.target_date,
+            kabupaten_list = kabupaten_list,
+            provinsi       = settings.provinsi,
+        )
+
+        if is_complete:
+            logger.info(
+                f"✅ Data {settings.target_date} sudah lengkap "
+                f"(>= {COMPLETE_THRESHOLD} harga non-null). "
+                "Pipeline selesai tanpa scraping."
+            )
             return
 
-        logger.info(f"  Kabupaten : {total}")
-        logger.info(f"  Workers   : {settings.workers} tab paralel")
+        if not to_scrape:
+            # Harusnya tidak terjadi jika is_complete=False, tapi jaga-jaga
+            logger.warning(
+                "Tidak ada kabupaten yang perlu di-scrape. "
+                "Mungkin data null semua atau DB check bermasalah."
+            )
+            return
+
+        total = len(to_scrape)
+        logger.info(f"  Kabupaten yang akan di-scrape : {total}/{total_kab}")
+        logger.info(f"  Workers                       : {settings.workers} tab paralel")
         logger.info("=" * 60)
 
-        # 3. Isi queue
+        # 3. Isi queue hanya dengan kabupaten yang belum ada data
         task_queue: Queue = Queue()
-        for kab in kabupaten_list:
+        for kab in to_scrape:
             await task_queue.put(kab)
 
         raw_results: list[HargaHarian] = []
@@ -208,8 +264,8 @@ async def run_pipeline(settings: Settings):
     elapsed_scrape = time.time() - t_start
     logger.info("=" * 60)
     logger.info(f"  Scraping selesai dalam {elapsed_scrape / 60:.1f} menit")
-    logger.info(f"  Berhasil : {counter['done']}")
-    logger.info(f"  Gagal    : {counter['failed']}")
+    logger.info(f"  Berhasil : {counter['done']} kabupaten")
+    logger.info(f"  Gagal    : {counter['failed']} kabupaten")
     logger.info(f"  Raw rows : {len(raw_results)}")
     logger.info("=" * 60)
 
@@ -223,14 +279,36 @@ async def run_pipeline(settings: Settings):
     # 5. Transform
     clean_records = transform(raw_results)
 
-    # 6. Upsert ke Supabase
+    # 6. Upsert ke Supabase (hanya non-null)
     result = upsert_to_supabase(settings.dsn, clean_records)
 
     elapsed_total = time.time() - t_start
+
+    # ── Ringkasan akhir ────────────────────────────────────────────────────────
     logger.info("=" * 60)
     logger.info("✅ Pipeline selesai!")
-    logger.info(f"   Upserted : {result['upserted']} rows")
-    logger.info(f"   Skipped  : {result['skipped']} rows (key tidak ditemukan)")
-    logger.info(f"   Tanggal  : {result['dates']}")
-    logger.info(f"   Total    : {elapsed_total / 60:.1f} menit")
+    logger.info(f"   Upserted      : {result['upserted']} rows (non-null)")
+    logger.info(f"   Skipped null  : {result['skipped_null']} rows (harga=None, tidak di-upsert)")
+    logger.info(f"   Skipped key   : {result['skipped_key']} rows (surrogate key tidak ditemukan)")
+    logger.info(f"   Tanggal       : {result['dates']}")
+    logger.info(f"   Total waktu   : {elapsed_total / 60:.1f} menit")
+    logger.info("─" * 60)
+
+    # Cek apakah sudah mencapai threshold — jika belum, beri sinyal jadwal berikutnya
+    tgl_str = str(settings.target_date)
+    filled  = result["filled_after"].get(tgl_str, 0)
+    complete = result["is_complete"].get(tgl_str, False)
+
+    if complete:
+        logger.info(
+            f"✅ {tgl_str}: {filled}/{COMPLETE_THRESHOLD} harga terisi — DATA LENGKAP."
+        )
+    else:
+        sisa = COMPLETE_THRESHOLD - filled
+        logger.warning(
+            f"⏳ {tgl_str}: {filled}/{COMPLETE_THRESHOLD} harga terisi "
+            f"— MASIH KURANG {sisa}. "
+            "Jadwal berikutnya akan scrape kabupaten yang belum masuk."
+        )
+
     logger.info("=" * 60)
