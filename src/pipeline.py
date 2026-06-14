@@ -276,10 +276,26 @@ async def run_pipeline(settings: Settings):
         )
         return
 
-    # 5. Transform
-    clean_records = transform(raw_results)
+    # 5. Filter null sebelum transform — hemat komputasi
+    non_null_raw = [r for r in raw_results if r.harga is not None]
+    null_count   = len(raw_results) - len(non_null_raw)
 
-    # 6. Upsert ke Supabase (hanya non-null)
+    logger.info(
+        f"Filter harga: {len(non_null_raw)} non-null dilanjutkan, "
+        f"{null_count} dibuang (harga=None) sebelum transform"
+    )
+
+    if not non_null_raw:
+        logger.warning(
+            "Semua records memiliki harga NULL — tidak ada yang di-upsert. "
+            "Kemungkinan SP2KP belum update data hari ini."
+        )
+        return
+
+    # 6. Transform (hanya data non-null)
+    clean_records = transform(non_null_raw)
+
+    # 7. Upsert ke Supabase
     result = upsert_to_supabase(settings.dsn, clean_records)
 
     elapsed_total = time.time() - t_start
@@ -288,7 +304,7 @@ async def run_pipeline(settings: Settings):
     logger.info("=" * 60)
     logger.info("✅ Pipeline selesai!")
     logger.info(f"   Upserted      : {result['upserted']} rows (non-null)")
-    logger.info(f"   Skipped null  : {result['skipped_null']} rows (harga=None, tidak di-upsert)")
+    logger.info(f"   Skipped null  : {null_count} rows (harga=None, difilter sebelum transform)")
     logger.info(f"   Skipped key   : {result['skipped_key']} rows (surrogate key tidak ditemukan)")
     logger.info(f"   Tanggal       : {result['dates']}")
     logger.info(f"   Total waktu   : {elapsed_total / 60:.1f} menit")
