@@ -143,27 +143,18 @@ def upsert_to_supabase(dsn: str, records: list[HargaHarian]) -> dict:
             "is_complete": {},
         }
 
-    # ── Filter null sebelum apapun ────────────────────────────────────────────
+    # Records masuk ke sini sudah dijamin non-null oleh pipeline.
+    # Defensive check: buang sisa null jika ada (tidak seharusnya terjadi).
     non_null_records = [r for r in records if r.harga is not None]
     null_count       = len(records) - len(non_null_records)
 
-    logger.info(
-        f"Filter harga: {len(non_null_records)} non-null diproses, "
-        f"{null_count} dibuang (harga=NULL)"
-    )
+    if null_count:
+        logger.warning(
+            f"supabase_loader: {null_count} record dengan harga=None ditemukan "
+            "dan dibuang (seharusnya sudah difilter di pipeline)."
+        )
 
-    if not non_null_records:
-        logger.warning("Semua records memiliki harga NULL — tidak ada yang di-upsert.")
-        return {
-            "upserted": 0,
-            "skipped_key": 0,
-            "skipped_null": null_count,
-            "dates": [],
-            "filled_after": {},
-            "is_complete": {},
-        }
-
-    # Kelompokkan per tanggal (hanya non-null)
+    # Kelompokkan per tanggal
     by_date: dict[date, list[HargaHarian]] = defaultdict(list)
     for record in non_null_records:
         by_date[record.tanggal].append(record)
