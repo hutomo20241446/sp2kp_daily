@@ -7,10 +7,10 @@ on:
   #   # 16 WIB = 09:00 UTC
   #   # 18 WIB = 11:00 UTC
   #   # 20 WIB = 13:00 UTC
-  #   - cron: "00 08 * * *"
-  #   - cron: "00 09 * * *"
-  #   - cron: "00 11 * * *"
-  #   - cron: "00 13 * * *"
+    - cron: "00 08 * * *"
+    - cron: "00 09 * * *"
+    - cron: "00 11 * * *"
+    - cron: "00 13 * * *"
   workflow_dispatch:
     inputs:
       target_date:
