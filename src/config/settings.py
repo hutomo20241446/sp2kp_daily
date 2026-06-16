@@ -22,7 +22,7 @@ class Settings:
     provinsi:   str   = "Jawa Tengah"
     workers:    int   = 3
     page_delay: float = 1.0
-    retry_max:  int   = 3
+    retry_max:  int   = 5
     headless:   bool  = True
 
     # DB
@@ -66,9 +66,9 @@ def get_settings() -> Settings:
         target_date = target,
         base_url    = os.getenv("BASE_URL",    "https://sp2kp.kemendag.go.id"),
         provinsi    = os.getenv("PROVINSI",    "Jawa Tengah"),
-        workers     = int(os.getenv("WORKERS", "5")),
+        workers     = int(os.getenv("WORKERS", "3")),
         page_delay  = float(os.getenv("PAGE_DELAY", "1.0")),
-        retry_max   = int(os.getenv("RETRY_MAX", "3")),
+        retry_max   = int(os.getenv("RETRY_MAX", "5")),
         headless    = os.getenv("HEADLESS", "true").lower() == "true",
         db_host     = "aws-1-ap-southeast-2.pooler.supabase.com",
         db_port     = "5432",
