@@ -1,2 +1,3 @@
-[deploy]
-startCommand = "PYTHONPATH=/app python src/main.py"
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
