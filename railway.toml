@@ -1,2 +1,2 @@
 [deploy]
-startCommand = "python src/main.py"
+startCommand = "PYTHONPATH=/app python src/main.py"
