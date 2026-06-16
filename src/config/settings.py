@@ -20,7 +20,7 @@ class Settings:
     # Scraper
     base_url:   str   = "https://sp2kp.kemendag.go.id"
     provinsi:   str   = "Jawa Tengah"
-    workers:    int   = 5
+    workers:    int   = 3
     page_delay: float = 1.0
     retry_max:  int   = 3
     headless:   bool  = True
