@@ -224,7 +224,7 @@ async def run_pipeline(settings: Settings):
             # Harusnya tidak terjadi jika is_complete=False, tapi jaga-jaga
             logger.warning(
                 "Tidak ada kabupaten yang perlu di-scrape. "
-                "Mungkin data null semua atau DB check bermasalah."
+                "Sebagian kabupaten_kota tidak meng-upload komoditas tertentu."
             )
             return
 
@@ -288,7 +288,7 @@ async def run_pipeline(settings: Settings):
     if not non_null_raw:
         logger.warning(
             "Semua records memiliki harga NULL — tidak ada yang di-upsert. "
-            "Kemungkinan SP2KP belum update data hari ini."
+            "SP2KP belum update data hari ini."
         )
         return
 
