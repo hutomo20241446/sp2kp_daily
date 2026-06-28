@@ -1,7 +1,6 @@
 # SP2KP Daily ETL
 
-Pipeline ETL otomatis untuk mengambil data **harga pangan harian** dari website **SP2KP Kementerian Perdagangan RI**, melakukan transformasi data, kemudian melakukan **upsert** ke database PostgreSQL (Supabase) menggunakan pendekatan dimensional modeling (Star Schema).
-
+Pipeline ETL otomatis yang berjalan di lingkungan Railway untuk mengekstrak data **harga pangan harian** dari website **SP2KP Kementerian Perdagangan RI**, mentransformasikan data, kemudian melakukan **upsert** ke database PostgreSQL (Supabase).
 ---
 
 # Arsitektur Pipeline
