@@ -307,7 +307,7 @@ src
 - PostgreSQL
 - Supabase
 - Psycopg3
-- GitHub Actions
+- GitHub Actions (ganti Railway)
 - Docker
 
 ---
