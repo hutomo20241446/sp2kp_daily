@@ -296,18 +296,8 @@ src
 └── main.py
 ```
 
-## Logging
-
-Logging mencakup:
-
-- progress ETL
-- progress worker
-- jumlah record
-- duplicate record
-- status database
-- kelengkapan data
-
 ---
+
 
 # Teknologi yang Digunakan
 
