@@ -35,7 +35,7 @@ jobs:
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
 
       # Scraper settings
-      WORKERS: "5"
+      WORKERS: "3"
       PAGE_DELAY: "1.0"
       RETRY_MAX: "3"
       BASE_URL: "https://sp2kp.kemendag.go.id"
