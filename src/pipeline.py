@@ -121,7 +121,27 @@ async def _worker(
     session = PageSession(
         browser, settings.base_url, settings.provinsi, worker_id
     )
-    await session.open()
+
+    opened = False
+    for open_attempt in range(1, settings.retry_max + 1):
+        try:
+            await session.open()
+            opened = True
+            break
+        except Exception as e:
+            logger.warning(
+                f"[W{worker_id}] ✗ Gagal buka sesi "
+                f"(attempt {open_attempt}/{settings.retry_max}): {e}"
+            )
+            if open_attempt < settings.retry_max:
+                await asyncio.sleep(5 * open_attempt)
+
+    if not opened:
+        logger.error(
+            f"[W{worker_id}] ✗ Menyerah membuka sesi setelah "
+            f"{settings.retry_max} percobaan — worker ini dilewati."
+        )
+        return
 
     while True:
         try:
