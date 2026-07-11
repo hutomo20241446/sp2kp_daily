@@ -1,4 +1,5 @@
 # src/scraper/sp2kp_scraper.py
+import asyncio
 from datetime import date
 from playwright.async_api import Browser
 
@@ -50,39 +51,70 @@ class SP2KPScraper:
 
     # ── 1. Ambil daftar kabupaten ──────────────────────────────────
 
-    async def fetch_kabupaten(self, browser: Browser) -> list[str]:
+    async def fetch_kabupaten(
+        self, browser: Browser, connect_retries: int = 3
+    ) -> list[str]:
         logger.info("Mengambil daftar kabupaten dari situs …")
-        session = PageSession(browser, self.base_url, self.provinsi, worker_id=0)
-        await session.open()
-        page = session.page
 
-        try:
-            kab_input = page.locator("#input-23")
-            await kab_input.click()
-            await page.wait_for_timeout(1_000)
+        result: list[str] = []
 
-            # Scroll dropdown agar semua item termuat
-            for _ in range(8):
-                try:
-                    await page.locator(".v-overlay__content .v-list").evaluate(
-                        "el => el.scrollTop += 500"
-                    )
-                except Exception:
-                    pass
-                await page.wait_for_timeout(200)
+        for attempt in range(1, connect_retries + 1):
+            session = PageSession(browser, self.base_url, self.provinsi, worker_id=0)
+            try:
+                await session.open()
+            except Exception as e:
+                logger.warning(
+                    f"⚠ Gagal konek ke situs (attempt {attempt}/{connect_retries}): {e}"
+                )
+                await session.close()
+                if attempt < connect_retries:
+                    backoff = 5 * attempt
+                    logger.info(f"  Retry dalam {backoff}s …")
+                    await asyncio.sleep(backoff)
+                    continue
+                logger.warning(
+                    f"⚠ Semua {connect_retries} percobaan koneksi gagal, "
+                    f"pakai fallback ({len(KABUPATEN_JATENG_FALLBACK)} kab/kota)"
+                )
+                return KABUPATEN_JATENG_FALLBACK
 
-            items = await page.locator(".v-overlay__content .v-list-item").all()
-            result = [
-                t for t in [(await i.inner_text()).strip() for i in items] if t
-            ]
-            await page.keyboard.press("Escape")
+            page = session.page
+            try:
+                kab_input = page.locator("#input-23")
+                await kab_input.click()
+                await page.wait_for_timeout(1_000)
 
-        finally:
-            await session.close()
+                # Scroll dropdown agar semua item termuat
+                for _ in range(8):
+                    try:
+                        await page.locator(".v-overlay__content .v-list").evaluate(
+                            "el => el.scrollTop += 500"
+                        )
+                    except Exception:
+                        pass
+                    await page.wait_for_timeout(200)
 
-        if result:
-            logger.info(f"✓ {len(result)} kabupaten/kota ditemukan dari situs")
-            return result
+                items = await page.locator(".v-overlay__content .v-list-item").all()
+                result = [
+                    t for t in [(await i.inner_text()).strip() for i in items] if t
+                ]
+                await page.keyboard.press("Escape")
+            except Exception as e:
+                logger.warning(
+                    f"⚠ Gagal ambil dropdown kabupaten (attempt {attempt}/{connect_retries}): {e}"
+                )
+                result = []
+            finally:
+                await session.close()
+
+            if result:
+                logger.info(f"✓ {len(result)} kabupaten/kota ditemukan dari situs")
+                return result
+
+            if attempt < connect_retries:
+                backoff = 5 * attempt
+                logger.info(f"  Retry dalam {backoff}s …")
+                await asyncio.sleep(backoff)
 
         logger.warning(
             f"⚠ Gagal ambil dari situs, pakai fallback "
